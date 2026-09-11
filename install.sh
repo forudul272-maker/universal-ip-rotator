@@ -4,8 +4,7 @@
 #   Supports: OpenVPN, WireGuard, VLESS, VMess, Trojan, Shadowsocks, SOCKS, HTTP
 # ==============================================================================
 
-set -e
-
+# set -e (disabled for robust stream execution)
 # Color definitions
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -35,6 +34,12 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
+# Ensure DNS resolvers are functional
+if ! grep -q "nameserver" /etc/resolv.conf 2>/dev/null; then
+    echo "nameserver 1.1.1.1" > /etc/resolv.conf
+    echo "nameserver 8.8.8.8" >> /etc/resolv.conf
+fi
+
 # Detect VPS IP
 ETH=$(ip route show default | awk '{print $5}' | head -n1)
 VPS_IP=$(curl -s --max-time 5 https://api.ipify.org || ip -4 addr show $ETH 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | head -n1)
@@ -53,7 +58,7 @@ echo -e "${CYAN}Protected by Foridul Cloudflare Edge Security System${NC}\n"
 
 AUTH_SUCCESS=0
 for attempt in 1 2 3; do
-    read -p "👉 Enter Installation Password / Key: " INPUT_KEY
+    read -p "👉 Enter Installation Password / Key: " INPUT_KEY </dev/tty
     INPUT_KEY=$(echo "$INPUT_KEY" | xargs)
     
     if [ -z "$INPUT_KEY" ]; then
@@ -92,7 +97,7 @@ echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━�
 echo -e "${YELLOW}${BOLD}━━━━━━━━━━━━━ 🤖 TELEGRAM BOT SETUP ━━━━━━━━━━━━━${NC}"
 
 while [ -z "$BOT_TOKEN" ]; do
-    read -p "👉 Enter Telegram Bot Token (API Key): " BOT_TOKEN
+    read -p "👉 Enter Telegram Bot Token (API Key): " BOT_TOKEN </dev/tty
     BOT_TOKEN=$(echo "$BOT_TOKEN" | xargs)
     if [ -z "$BOT_TOKEN" ]; then
         echo -e "${RED}⚠️ Bot Token cannot be empty! Please enter valid token.${NC}"
@@ -100,7 +105,7 @@ while [ -z "$BOT_TOKEN" ]; do
 done
 
 while [ -z "$ADMIN_ID" ]; do
-    read -p "👉 Enter Admin Telegram User ID: " ADMIN_ID
+    read -p "👉 Enter Admin Telegram User ID: " ADMIN_ID </dev/tty
     ADMIN_ID=$(echo "$ADMIN_ID" | xargs)
     if [ -z "$ADMIN_ID" ]; then
         echo -e "${RED}⚠️ Admin ID cannot be empty!${NC}"
@@ -109,18 +114,23 @@ done
 
 echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
 
-echo -e "${CYAN}⏳ [1/5] Installing core system packages (OpenVPN, WireGuard, Redsocks, Tools)...${NC}"
-apt-get update -y >/dev/null 2>&1
-apt-get install -y python3 python3-pip python3-venv openvpn wireguard wireguard-tools resolvconf redsocks iptables curl iproute2 git net-tools >/dev/null 2>&1
+echo -e "${CYAN}⏳ [1/5] Updating and installing system packages (OpenVPN, WireGuard, Redsocks)...${NC}"
+apt-get update -y
+apt-get install -y python3 python3-pip python3-venv openvpn wireguard wireguard-tools redsocks iptables curl iproute2 git net-tools
 
-echo -e "${CYAN}⏳ [2/5] Creating application environment at /opt/foridul-ip-rotator...${NC}"
+echo -e "\n${CYAN}⏳ [2/5] Setting up Python virtual environment & installing libraries...${NC}"
 INSTALL_DIR="/opt/foridul-ip-rotator"
 mkdir -p "${INSTALL_DIR}/ovpn" "${INSTALL_DIR}/wireguard" "${INSTALL_DIR}/xray_out" "${INSTALL_DIR}/pool" "/etc/wireguard"
 
 # Python Virtualenv
 python3 -m venv "${INSTALL_DIR}/venv"
-"${INSTALL_DIR}/venv/bin/pip" install --upgrade pip >/dev/null 2>&1
-"${INSTALL_DIR}/venv/bin/pip" install pyTelegramBotAPI requests >/dev/null 2>&1
+"${INSTALL_DIR}/venv/bin/pip" install --upgrade pip
+if ! "${INSTALL_DIR}/venv/bin/pip" install pyTelegramBotAPI requests; then
+    echo "⚠️ Retrying with direct Cloudflare DNS..."
+    echo "nameserver 1.1.1.1" > /etc/resolv.conf
+    echo "nameserver 8.8.8.8" >> /etc/resolv.conf
+    "${INSTALL_DIR}/venv/bin/pip" install pyTelegramBotAPI requests
+fi
 
 # Write Configuration
 cat <<EOF > "${INSTALL_DIR}/config.json"
