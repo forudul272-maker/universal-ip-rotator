@@ -1072,6 +1072,31 @@ def handle_update_command(message):
     except Exception as e:
         bot.edit_message_text(f"❌ Update error: {e}", message.chat.id, msg.message_id)
 
+@bot.message_handler(commands=["auth", "credentials", "setauth"])
+def handle_set_auth_command(message):
+    if not is_admin(message): return
+    args = message.text.split(maxsplit=1)
+    if len(args) > 1 and ":" in args[1]:
+        u, p = args[1].split(":", 1)
+        auth_path = os.path.join(OVPN_DIR, "auth.txt")
+        with open(auth_path, "w") as f:
+            f.write(f"{u.strip()}\n{p.strip()}\n")
+        os.chmod(auth_path, 0o600)
+        bot.reply_to(
+            message,
+            f"✅ <b>OpenVPN Credentials Updated!</b>\n\n"
+            f"👤 <b>Username:</b> <code>{u.strip()}</code>\n"
+            f"🔑 <b>Password:</b> <code>{'*' * len(p.strip())}</code>\n\n"
+            f"<i>You can now upload any .ovpn file and it will use these credentials.</i>"
+        )
+    else:
+        bot.reply_to(
+            message,
+            "ℹ️ <b>Usage:</b>\n<code>/auth username:password</code>\n\n"
+            "<i>Example:</i>\n<code>/auth pW68zjWgDD6n4wEXy5qY9Tah:ythFfCAexqRctb9pCbHKAbKd</code>"
+        )
+
+
 @bot.message_handler(func=lambda m: m.text in ["🌐 Check Current IP / Status", "/ip", "/status"])
 def handle_status(message):
     if not is_admin(message): return
@@ -1428,7 +1453,14 @@ def handle_document(message):
             content = f.read()
             
         auth_file = os.path.join(OVPN_DIR, "auth.txt")
-        if "auth-user-pass" in content and not os.path.exists(auth_file):
+        # Check if username and password are embedded inside <auth-user-pass> tags
+        embedded_auth = re.search(r"<auth-user-pass>\s*([^\r\n]+)\s+([^\r\n]+)\s*</auth-user-pass>", content, re.IGNORECASE)
+        if embedded_auth:
+            u, p = embedded_auth.group(1).strip(), embedded_auth.group(2).strip()
+            with open(auth_file, "w") as f:
+                f.write(f"{u}\n{p}\n")
+            os.chmod(auth_file, 0o600)
+        elif "auth-user-pass" in content:
             user_states[message.from_user.id] = {
                 "state": "AWAITING_OVPN_AUTH",
                 "ovpn_path": target_path,
@@ -1439,7 +1471,8 @@ def handle_document(message):
                 "🔑 <b>Credentials needed for this OpenVPN.</b>\n\nReply in format: <code>username:password</code>",
                 reply_markup=types.ForceReply()
             )
-        else:
+            return
+
             # Auto add to pool
             pool = load_pool()
             node_alias = message.document.file_name.replace(".ovpn", "").replace("_", " ").title()
