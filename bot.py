@@ -537,24 +537,27 @@ def start_openvpn(chat_id, ovpn_path, username=None, password=None, node_name="O
 
 def start_wireguard(chat_id, wg_conf_content, node_name="WireGuard Node"):
     global active_node_info
-    bot.send_message(chat_id, f"⏳ <b>Starting WireGuard ({node_name}) & verifying handshake...</b>")
+    bot.send_message(chat_id, f"⏳ <b>Testing WireGuard ({node_name}) handshake safely...</b>")
     stop_all_routing()
     time.sleep(1)
     
     try:
-        # 1. Sanitize WireGuard config for Linux VPS safety:
-        # Remove DNS line to prevent breaking VPS DNS resolution
+        # 1. Sanitize WireGuard config for absolute VPS safety:
+        # Strip DNS to preserve reliable server DNS
         clean_conf = re.sub(r'(?im)^\s*DNS\s*=.*$', '# DNS preserved by system', wg_conf_content)
-        # Remove IPv6 ::/0 if IPv6 routing is not enabled
+        # Strip IPv6 ::/0
         clean_conf = clean_conf.replace(", ::/0", "").replace("::/0,", "").replace("::/0", "")
-        
+        # Enforce Table = off so wg-quick DOES NOT touch routing during handshake test
+        if "[Interface]" in clean_conf:
+            clean_conf = clean_conf.replace("[Interface]", "[Interface]\nTable = off")
+            
         wg_path = "/etc/wireguard/wg0.conf"
         with open(wg_path, "w", encoding="utf-8") as f:
             f.write(clean_conf)
         os.chmod(wg_path, 0o600)
         
-        # Ensure previous wg0 is down
-        subprocess.run("wg-quick down wg0 2>/dev/null || true", shell=True)
+        # Ensure previous wg0 is torn down
+        subprocess.run("wg-quick down wg0 2>/dev/null || ip link del dev wg0 2>/dev/null || true", shell=True)
         time.sleep(1)
         
         up_res = subprocess.run("wg-quick up wg0", shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -567,9 +570,9 @@ def start_wireguard(chat_id, wg_conf_content, node_name="WireGuard Node"):
             stop_all_routing()
             return
             
-        # 2. Verify active WireGuard handshake (within 6 seconds)
+        # 2. Test handshake WITHOUT any routing changes (VPS internet remains 100% normal)
         handshake_ok = False
-        for _ in range(6):
+        for _ in range(5):
             time.sleep(1)
             hs = subprocess.run("wg show wg0 latest-handshakes 2>/dev/null | awk '{print $2}'", shell=True, stdout=subprocess.PIPE).stdout.decode().strip()
             if hs and hs.isdigit() and int(hs) > 0 and (time.time() - int(hs)) < 30:
@@ -577,21 +580,23 @@ def start_wireguard(chat_id, wg_conf_content, node_name="WireGuard Node"):
                 break
                 
         if not handshake_ok:
-            # WireGuard peer did NOT respond! Teardown immediately to prevent blackholing traffic
-            subprocess.run("wg-quick down wg0 2>/dev/null || true", shell=True)
+            # Remote server did NOT respond! Teardown interface cleanly
+            subprocess.run("wg-quick down wg0 2>/dev/null || ip link del dev wg0 2>/dev/null || true", shell=True)
             stop_all_routing()
             text = (
                 f"❌ <b>{node_name} Handshake Failed!</b>\n\n"
-                "⚠️ The remote WireGuard server did not respond to the handshake.\n"
+                "⚠️ Remote WireGuard server did not respond to handshake.\n"
                 "• <i>Causes:</i> Expired PrivateKey, invalid Endpoint, or UDP port blocked.\n"
-                "🛡️ <i>Connection was automatically rolled back to protect server routing.</i>"
+                "🛡️ <b>VPS 100% Protected:</b> Zero routes were altered, no disconnects!"
             )
             add_history_entry(node_name, "N/A", "N/A", "N/A", "Handshake Failed")
             bot.send_message(chat_id, text, reply_markup=status_inline_keyboard())
             return
             
-        # 3. Handshake succeeded!
+        # 3. Handshake is verified active! Now safely activate default route via wg0
+        subprocess.run("ip route add default dev wg0 2>/dev/null || ip route replace default dev wg0 2>/dev/null || true", shell=True)
         ensure_ssh_routing_safety()
+        
         info = get_public_ip_info()
         active_node_info = {"name": node_name, "type": "wg", "connected_at": time.time()}
         add_history_entry(node_name, info.get("ip"), info.get("location"), info.get("isp"), "Connected")
@@ -602,12 +607,12 @@ def start_wireguard(chat_id, wg_conf_content, node_name="WireGuard Node"):
             f"🌍 <b>Location:</b> {info.get('location')}\n"
             f"🏢 <b>ISP:</b> {info.get('isp')}\n"
             "━━━━━━━━━━━━━━━━━━━━━━\n"
-            "⚡ <i>Ultra-low latency WireGuard kernel routing active.</i>"
+            "⚡ <i>Ultra-low latency WireGuard routing active.</i>"
         )
         bot.send_message(chat_id, text, reply_markup=status_inline_keyboard())
         
     except Exception as e:
-        subprocess.run("wg-quick down wg0 2>/dev/null || true", shell=True)
+        subprocess.run("wg-quick down wg0 2>/dev/null || ip link del dev wg0 2>/dev/null || true", shell=True)
         stop_all_routing()
         bot.send_message(chat_id, f"❌ <b>WireGuard Error:</b> <code>{e}</code>", reply_markup=status_inline_keyboard())
 
