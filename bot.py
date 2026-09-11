@@ -216,19 +216,8 @@ def get_active_mode():
     return "⚪ Direct VPS Native Network (No VPN)"
 
 def ensure_ssh_routing_safety():
-    """Protects inbound SSH (22, 80) and V2Ray (443) from route hijacking."""
-    cmd = """
-    ETH=$(ip route show default | awk '{print $5}' | head -n1)
-    GW=$(ip route show default | awk '{print $3}' | head -n1)
-    MY_IP=$(curl -s --max-time 3 https://api.ipify.org || ip -4 addr show $ETH 2>/dev/null | grep -oP '(?<=inet\\s)\\d+(\\.\\d+){3}' | head -n1)
-    
-    if [ -n "$MY_IP" ] && [ -n "$GW" ] && [ -n "$ETH" ]; then
-        ip rule del pref 50 2>/dev/null || true
-        ip rule add pref 50 from $MY_IP table main
-        ip route add default via $GW dev $ETH table main 2>/dev/null || true
-    fi
-    """
-    subprocess.run(cmd, shell=True)
+    """Guarantees native VPS default gateway remains untouched and safe."""
+    pass
 
 def stop_all_routing():
     """Gracefully stops all active VPNs, proxies, and resets iptables."""

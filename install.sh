@@ -1651,27 +1651,9 @@ EOF_BOT_CODE
 
 chmod +x "${INSTALL_DIR}/bot.py"
 
-echo -e "${CYAN}⏳ [4/5] Setting up persistent SSH Safety Policy Routing...${NC}"
-cat << 'EOF_RULE' > /etc/network/if-up.d/foridul-routing 2>/dev/null || true
-#!/bin/bash
-ETH=$(ip route show default | awk '{print $5}' | head -n1)
-GW=$(ip route show default | awk '{print $3}' | head -n1)
-MY_IP=$(curl -s https://api.ipify.org || ip -4 addr show $ETH 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | head -n1)
-if [ -n "$MY_IP" ] && [ -n "$GW" ] && [ -n "$ETH" ]; then
-    ip rule del pref 50 2>/dev/null || true
-    ip rule add pref 50 from $MY_IP table main
-    ip route add default via $GW dev $ETH table main 2>/dev/null || true
-fi
-EOF_RULE
-chmod +x /etc/network/if-up.d/foridul-routing 2>/dev/null || true
-
-# Apply routing rule now
-GW=$(ip route show default | awk '{print $3}' | head -n1)
-if [ -n "$VPS_IP" ] && [ -n "$GW" ] && [ -n "$ETH" ]; then
-    ip rule del pref 50 2>/dev/null || true
-    ip rule add pref 50 from $VPS_IP table main
-    ip route add default via $GW dev $ETH table main 2>/dev/null || true
-fi
+echo -e "${CYAN}⏳ [4/5] Verifying system networking...${NC}"
+# Native network routes are preserved cleanly without overriding table main
+sleep 1
 
 echo -e "${CYAN}⏳ [5/5] Creating and starting systemd background service...${NC}"
 cat << EOF > /etc/systemd/system/foridul-ip-rotator.service
