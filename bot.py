@@ -396,7 +396,8 @@ def main_keyboard():
         types.KeyboardButton("🔮 Add V2Ray / SS / Trojan Link"),
         types.KeyboardButton("🧦 Add SOCKS5 / HTTP Proxy"),
         types.KeyboardButton("🛑 Reset to Default Native IP"),
-        types.KeyboardButton("📜 Connection History")
+        types.KeyboardButton("📜 Connection History"),
+        types.KeyboardButton("🔄 Update Engine (/update)")
     )
     return markup
 
@@ -1047,6 +1048,29 @@ def send_status_dashboard(chat_id, edit_message_id=None):
             bot.send_message(chat_id, text, reply_markup=status_inline_keyboard())
     else:
         bot.send_message(chat_id, text, reply_markup=status_inline_keyboard())
+
+@bot.message_handler(func=lambda m: m.text in ["🔄 Update Engine (/update)", "/update", "/upgrade"])
+def handle_update_command(message):
+    if not is_admin(message): return
+    msg = bot.send_message(message.chat.id, "⏳ <b>Checking GitHub for latest engine updates...</b>")
+    try:
+        url = "https://raw.githubusercontent.com/forudul272-maker/universal-ip-rotator/main/bot.py"
+        res = requests.get(url, timeout=12)
+        if res.status_code == 200 and "FORIDUL UNIVERSAL IP ROTATOR" in res.text:
+            target_path = os.path.join(BASE_DIR, "bot.py")
+            with open(target_path, "w", encoding="utf-8") as f:
+                f.write(res.text)
+            bot.edit_message_text(
+                "🎉 <b>Update Downloaded & Installed Successfully!</b>\n\n"
+                "🔄 <i>Restarting service to apply latest bulletproof features...</i>",
+                message.chat.id,
+                msg.message_id
+            )
+            subprocess.Popen("sleep 2 && systemctl restart foridul-ip-rotator.service", shell=True)
+        else:
+            bot.edit_message_text("❌ Failed to fetch valid update from GitHub.", message.chat.id, msg.message_id)
+    except Exception as e:
+        bot.edit_message_text(f"❌ Update error: {e}", message.chat.id, msg.message_id)
 
 @bot.message_handler(func=lambda m: m.text in ["🌐 Check Current IP / Status", "/ip", "/status"])
 def handle_status(message):
