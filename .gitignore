@@ -1,0 +1,24 @@
+# Configuration with sensitive bot tokens and IPs
+config.json
+
+# Python cache & virtual environments
+__pycache__/
+*.pyc
+*.pyo
+venv/
+env/
+.venv/
+
+# Active VPN and proxy runtime files & logs
+ovpn/
+wireguard/
+xray_out/
+pool/
+*.log
+*.ovpn
+*.conf
+auth.txt
+
+# OS metadata
+.DS_Store
+Thumbs.db
