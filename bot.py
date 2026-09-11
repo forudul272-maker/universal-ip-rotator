@@ -216,8 +216,39 @@ def get_active_mode():
     return "⚪ Direct VPS Native Network (No VPN)"
 
 def ensure_ssh_routing_safety():
-    """Guarantees native VPS default gateway remains untouched and safe."""
-    pass
+    """
+    Guarantees incoming SSH (port 22) and physical VPS IP traffic
+    always routes directly via physical interface using isolated table 200.
+    NEVER touches or corrupts table main!
+    """
+    phys_if = config.get("phys_if") or "eth0"
+    phys_gw = config.get("phys_gw")
+    phys_ip = config.get("phys_ip") or config.get("vps_ip")
+    
+    cmd = f"""
+    ip rule del pref 50 2>/dev/null || true
+    ip rule del pref 100 2>/dev/null || true
+    
+    ETH="{phys_if}"
+    GW="{phys_gw or ''}"
+    MY_IP="{phys_ip or ''}"
+    
+    if [ -z "$GW" ] || [ -z "$MY_IP" ]; then
+        ETH=$(ip -o -4 route show to default 2>/dev/null | awk '{{for(i=1;i<=NF;i++) if($i=="dev") print $(i+1)}}' | grep -v -E 'tun|tap|wg' | head -n1)
+        [ -z "$ETH" ] && ETH="eth0"
+        GW=$(ip -o -4 route show to default dev "$ETH" 2>/dev/null | awk '{{for(i=1;i<=NF;i++) if($i=="via") print $(i+1)}}' | head -n1)
+        MY_IP=$(ip -4 -o addr show dev "$ETH" 2>/dev/null | awk '{{print $4}}' | cut -d'/' -f1 | head -n1)
+    fi
+    
+    if [ -n "$MY_IP" ] && [ -n "$GW" ] && [ -n "$ETH" ]; then
+        ip route replace default via "$GW" dev "$ETH" table 200 2>/dev/null || ip route add default via "$GW" dev "$ETH" table 200 2>/dev/null || true
+        ip rule add from "$MY_IP" table 200 pref 100 2>/dev/null || true
+    fi
+    """
+    try:
+        subprocess.run(cmd, shell=True, timeout=5)
+    except Exception as e:
+        logger.warning(f"SSH safety configuration notice: {e}")
 
 def stop_all_routing():
     """Gracefully stops all active VPNs, proxies, and resets iptables."""
